@@ -2,10 +2,12 @@ package com.example.videolooper;
 
 import android.Manifest;
 import android.app.Activity;
+import android.content.Context;
 import android.content.Intent;
 import android.content.pm.PackageManager;
 import android.graphics.Color;
 import android.graphics.Typeface;
+import android.media.AudioManager;
 import android.media.MediaPlayer;
 import android.net.Uri;
 import android.os.Build;
@@ -19,16 +21,22 @@ import android.view.View;
 import android.view.WindowManager;
 import android.widget.FrameLayout;
 import android.widget.TextView;
+import android.widget.Toast;
 import android.widget.VideoView;
 
 import java.io.File;
 
 /**
- * VideoLooper : lit une vidéo en boucle, plein écran, mode kiosque.
+ * VideoLooper : lecture en boucle, plein écran, mode kiosque, avec son.
  *
- * Point clé : on utilise VideoView (et NON un MediaPlayer brut). VideoView
- * attend que sa Surface soit créée avant de préparer/lancer la lecture, ce qui
- * élimine l'erreur "what=1 extra=0" causée par un start() appelé trop tôt.
+ * Commandes tactiles :
+ *   1 appui        -> pause / reprise
+ *   2 appuis brefs -> coupe / remet le son
+ *   5 appuis       -> arrête le programme
+ *
+ * On distingue le nombre d'appuis avec une fenêtre de TAP_WINDOW ms : tant
+ * que les appuis s'enchaînent dans cette fenêtre, ils sont comptés ensemble,
+ * puis l'action correspondante est déclenchée.
  */
 public class MainActivity extends Activity {
 
@@ -36,48 +44,133 @@ public class MainActivity extends Activity {
     private static final String VIDEO_PATH = "/storage/emulated/0/Disruptive.mp4";
     private static final int    MAX_RETRY  = 5;
     private static final int    REQ_READ   = 101;
+    private static final long   TAP_WINDOW = 350; // ms pour grouper les appuis
 
     private VideoView videoView;
     private TextView  logView;
+    private MediaPlayer player;       // récupéré dans onPrepared (pour le volume)
+    private boolean muted = false;
+    private int retryCount = 0;
+    private int tapCount = 0;
+    private boolean initiated = false;
+
     private final Handler handler = new Handler(Looper.getMainLooper());
     private final StringBuilder log = new StringBuilder();
-    private int retryCount = 0;
-    private boolean initiated = false;
+
+    private final Runnable tapEvaluator = new Runnable() {
+        @Override public void run() {
+            int n = tapCount;
+            tapCount = 0;
+            handleTaps(n);
+        }
+    };
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
 
-        // Plein écran + écran toujours allumé (kiosque)
         getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
         hideSystemUi();
 
-        // --- UI construite en code, pas besoin de fichier XML ---
+        // S'assure que le volume média est audible (sinon "pas de son")
+        ensureMediaVolume();
+
+        // --- UI en code ---
         FrameLayout root = new FrameLayout(this);
-        root.setBackgroundColor(Color.parseColor("#7a0d0d")); // rouge sombre
+        root.setBackgroundColor(Color.parseColor("#7a0d0d"));
 
         videoView = new VideoView(this);
-        FrameLayout.LayoutParams vp = new FrameLayout.LayoutParams(
+        FrameLayout.LayoutParams full = new FrameLayout.LayoutParams(
                 FrameLayout.LayoutParams.MATCH_PARENT,
                 FrameLayout.LayoutParams.MATCH_PARENT);
-        vp.gravity = Gravity.CENTER;
-        videoView.setLayoutParams(vp);
+        full.gravity = Gravity.CENTER;
+        videoView.setLayoutParams(full);
 
         logView = new TextView(this);
-        logView.setTextColor(Color.parseColor("#33ff33")); // vert terminal
+        logView.setTextColor(Color.parseColor("#33ff33"));
         logView.setTextSize(16);
         logView.setTypeface(Typeface.MONOSPACE);
         logView.setPadding(40, 60, 40, 40);
 
+        // Couche transparente qui capte tous les appuis, au-dessus de la vidéo
+        View touchCatcher = new View(this);
+        touchCatcher.setLayoutParams(full);
+        touchCatcher.setClickable(true);
+        touchCatcher.setOnClickListener(new View.OnClickListener() {
+            @Override public void onClick(View v) { onTap(); }
+        });
+
         root.addView(videoView);
-        root.addView(logView); // log par-dessus la vidéo
+        root.addView(logView);
+        root.addView(touchCatcher);
         setContentView(root);
 
         println(">>> VideoLooper démarré");
         ensurePermissionThenStart();
     }
 
-    /** Vérifie l'accès au stockage selon la version d'Android, puis démarre. */
+    // === Gestion des appuis ===
+
+    private void onTap() {
+        tapCount++;
+        handler.removeCallbacks(tapEvaluator);
+        handler.postDelayed(tapEvaluator, TAP_WINDOW);
+    }
+
+    private void handleTaps(int n) {
+        if (n >= 5) {
+            quitApp();
+        } else if (n == 2) {
+            toggleMute();
+        } else if (n == 1) {
+            togglePlayPause();
+        }
+        // 3 ou 4 appuis : aucune action
+    }
+
+    private void togglePlayPause() {
+        if (videoView.isPlaying()) {
+            videoView.pause();
+            toast("\u23F8 Pause");
+        } else {
+            videoView.start();
+            toast("\u25B6 Lecture");
+        }
+    }
+
+    private void toggleMute() {
+        muted = !muted;
+        applyVolume();
+        toast(muted ? "\uD83D\uDD07 Son coupé" : "\uD83D\uDD0A Son activé");
+    }
+
+    private void applyVolume() {
+        if (player != null) {
+            float v = muted ? 0f : 1f;
+            player.setVolume(v, v);
+        }
+    }
+
+    private void quitApp() {
+        println("Arrêt du programme...");
+        handler.removeCallbacksAndMessages(null);
+        if (videoView != null) videoView.stopPlayback();
+        finishAndRemoveTask();
+    }
+
+    /** Remonte le volume STREAM_MUSIC à ~70% s'il est à zéro. */
+    private void ensureMediaVolume() {
+        try {
+            AudioManager am = (AudioManager) getSystemService(Context.AUDIO_SERVICE);
+            if (am != null && am.getStreamVolume(AudioManager.STREAM_MUSIC) == 0) {
+                int max = am.getStreamMaxVolume(AudioManager.STREAM_MUSIC);
+                am.setStreamVolume(AudioManager.STREAM_MUSIC, (int) (max * 0.7f), 0);
+            }
+        } catch (Exception ignored) { }
+    }
+
+    // === Permissions ===
+
     private void ensurePermissionThenStart() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {           // Android 11+
             if (Environment.isExternalStorageManager()) {
@@ -99,10 +192,12 @@ public class MainActivity extends Activity {
             } else {
                 requestPermissions(new String[]{Manifest.permission.READ_EXTERNAL_STORAGE}, REQ_READ);
             }
-        } else {                                                       // < Android 6
+        } else {
             startPlayback();
         }
     }
+
+    // === Lecture ===
 
     private void startPlayback() {
         initiated = true;
@@ -120,10 +215,11 @@ public class MainActivity extends Activity {
         videoView.setOnPreparedListener(new MediaPlayer.OnPreparedListener() {
             @Override
             public void onPrepared(MediaPlayer mp) {
-                mp.setLooping(true);      // boucle native, sans coupure ni recréation
+                player = mp;              // pour piloter le volume (mute)
+                mp.setLooping(true);      // boucle native, sans coupure
+                applyVolume();            // applique l'état mute courant
                 retryCount = 0;
                 videoView.start();
-                // On masque le log une fois la lecture lancée
                 handler.postDelayed(new Runnable() {
                     @Override public void run() { logView.setVisibility(View.GONE); }
                 }, 800);
@@ -133,6 +229,7 @@ public class MainActivity extends Activity {
         videoView.setOnErrorListener(new MediaPlayer.OnErrorListener() {
             @Override
             public boolean onError(MediaPlayer mp, int what, int extra) {
+                player = null;
                 println("\u2717 Erreur lecture (what=" + what + " extra=" + extra + ")");
                 logView.setVisibility(View.VISIBLE);
                 if (++retryCount <= MAX_RETRY) {
@@ -143,16 +240,13 @@ public class MainActivity extends Activity {
                 } else {
                     println("Abandon après " + MAX_RETRY + " tentatives.");
                 }
-                return true; // erreur gérée -> pas de boîte de dialogue système
+                return true;
             }
         });
 
         println("Lancement dans 3 secondes...");
         handler.postDelayed(new Runnable() {
-            @Override public void run() {
-                // setVideoURI déclenche prepareAsync DÈS que la Surface est prête.
-                videoView.setVideoURI(Uri.fromFile(f));
-            }
+            @Override public void run() { videoView.setVideoURI(Uri.fromFile(f)); }
         }, 3000);
     }
 
@@ -161,13 +255,16 @@ public class MainActivity extends Activity {
         logView.setText(log.toString());
     }
 
+    private void toast(String s) {
+        Toast.makeText(this, s, Toast.LENGTH_SHORT).show();
+    }
+
     // === Cycle de vie / plein écran ===
 
     @Override
     protected void onResume() {
         super.onResume();
         hideSystemUi();
-        // Retour depuis l'écran d'autorisation "Tous les fichiers" (Android 11+)
         if (!initiated && Build.VERSION.SDK_INT >= Build.VERSION_CODES.R
                 && Environment.isExternalStorageManager()) {
             startPlayback();

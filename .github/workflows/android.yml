@@ -12,15 +12,13 @@ jobs:
         with:
           java-version: '11'
           distribution: 'temurin'
-      - name: Debug - voir les fichiers
-        run: ls -la && ls -la VideoLooper/ || true
       - name: Rename folder
         run: mv VideoLooper app
       - name: Make gradlew executable
-        run: ls -la && chmod +x gradlew
+        run: chmod +x app/gradlew
       - name: Build APK
-        run: ./gradlew assembleDebug
+        run: cd app && ./gradlew assembleDebug
       - uses: actions/upload-artifact@v4
         with:
           name: VideoLooper-APK
-          path: app/build/outputs/apk/debug/*.apk
+          path: app/app/build/outputs/apk/debug/*.apk

@@ -1,0 +1,24 @@
+name: Build APK
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - uses: actions/setup-java@v3
+        with:
+          java-version: '11'
+          distribution: 'temurin'
+      - name: Rename folder
+        run: mv VideoLooper app
+      - name: Make gradlew executable
+        run: chmod +x gradlew
+      - name: Build APK
+        run: ./gradlew assembleRelease
+      - uses: actions/upload-artifact@v3
+        with:
+          name: VideoLooper-APK
+          path: app/build/outputs/apk/release/*.apk

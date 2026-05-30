@@ -13,6 +13,8 @@
     <uses-permission android:name="android.permission.MANAGE_EXTERNAL_STORAGE" />
     <!-- Android 13+ : accès média vidéo granulaire (utile si le fichier est indexé) -->
     <uses-permission android:name="android.permission.READ_MEDIA_VIDEO" />
+    <!-- Permet d'ajuster le volume média au démarrage -->
+    <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />
 
     <application
         android:label="VideoLooper"

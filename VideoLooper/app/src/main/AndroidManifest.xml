@@ -1,53 +1,39 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!--
-  Note AGP 8+ : si ton build.gradle récent utilise "namespace 'com.videolooper'",
-  l'attribut "package" ci-dessous est ignoré. Garde les deux identiques.
--->
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     package="com.videolooper"
     android:installLocation="internalOnly">
 
-    <!-- Android 6 : seule permission utile ici (demandée à l'exécution) -->
     <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" />
-    <!-- Ajuste le volume média au démarrage -->
     <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />
-    <!-- Démarrage automatique au boot (méthode receiver) -->
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+    <!-- Pour recevoir les changements de connexion réseau -->
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
 
     <!-- Sans effet sur Android 6, utile seulement sur Android 11+/13+ -->
     <uses-permission android:name="android.permission.MANAGE_EXTERNAL_STORAGE" />
     <uses-permission android:name="android.permission.READ_MEDIA_VIDEO" />
 
-    <!-- installLocation=internalOnly : empêche l'installation sur carte SD,
-         sinon le démarrage au boot ne marche pas -->
     <application
         android:label="VideoLooper"
         android:allowBackup="true"
         android:requestLegacyExternalStorage="true"
         android:theme="@android:style/Theme.Black.NoTitleBar.Fullscreen">
 
+        <!-- launchMode=singleTask : une relance ramène l'app au premier plan
+             SANS recréer l'activité, donc la vidéo ne repart pas de zéro. -->
         <activity
             android:name=".MainActivity"
             android:exported="true"
+            android:launchMode="singleTask"
             android:screenOrientation="landscape"
             android:configChanges="orientation|screenSize|keyboardHidden|screenLayout">
-
-            <!-- Lancement normal depuis la liste d'apps -->
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
-
-            <!-- MÉTHODE LANCEUR (activée) : permet de définir l'app comme
-                 écran d'accueil. C'est ça qui garantit le démarrage au boot. -->
-            <intent-filter>
-                <action android:name="android.intent.action.MAIN" />
-                <category android:name="android.intent.category.HOME" />
-                <category android:name="android.intent.category.DEFAULT" />
-            </intent-filter>
         </activity>
 
-        <!-- Démarrage au boot (méthode receiver, en complément) -->
+        <!-- Relance l'app sur plusieurs événements (boot, wifi, déverrouillage) -->
         <receiver
             android:name=".BootReceiver"
             android:enabled="true"
@@ -55,7 +41,9 @@
             <intent-filter>
                 <action android:name="android.intent.action.BOOT_COMPLETED" />
                 <action android:name="android.intent.action.QUICKBOOT_POWERON" />
-                <category android:name="android.intent.category.DEFAULT" />
+                <action android:name="com.htc.intent.action.QUICKBOOT_POWERON" />
+                <action android:name="android.net.conn.CONNECTIVITY_CHANGE" />
+                <action android:name="android.intent.action.USER_PRESENT" />
             </intent-filter>
         </receiver>
     </application>

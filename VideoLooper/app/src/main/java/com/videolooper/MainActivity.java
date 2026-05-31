@@ -24,27 +24,31 @@ import android.widget.TextView;
 import android.widget.Toast;
 import android.widget.VideoView;
 
+import java.io.DataOutputStream;
 import java.io.File;
 
 /**
- * VideoLooper : lecture en boucle, plein écran, mode kiosque, avec son.
+ * VideoLooper : lecture en boucle, plein écran, avec son et démarrage auto.
  *
  * Commandes tactiles :
  *   1 appui        -> pause / reprise
  *   2 appuis brefs -> coupe / remet le son
  *   5 appuis       -> arrête le programme
+ *
+ * Au lancement, si le root est disponible, l'app installe elle-même un script
+ * de démarrage dans les dossiers de boot du système. byJoywe ne peut alors
+ * plus empêcher le lancement au boot.
  */
 public class MainActivity extends Activity {
 
-    // === À ADAPTER ===
     private static final String VIDEO_PATH = "/storage/emulated/0/Disruptive.mp4";
     private static final int    MAX_RETRY  = 5;
     private static final int    REQ_READ   = 101;
-    private static final long   TAP_WINDOW = 350; // ms pour grouper les appuis
+    private static final long   TAP_WINDOW = 350;
 
     private VideoView videoView;
     private TextView  logView;
-    private MediaPlayer player;       // récupéré dans onPrepared (pour le volume)
+    private MediaPlayer player;
     private boolean muted = false;
     private int retryCount = 0;
     private int tapCount = 0;
@@ -67,11 +71,8 @@ public class MainActivity extends Activity {
 
         getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
         hideSystemUi();
-
-        // S'assure que le volume média est audible (sinon "pas de son")
         ensureMediaVolume();
 
-        // --- UI en code ---
         FrameLayout root = new FrameLayout(this);
         root.setBackgroundColor(Color.parseColor("#7a0d0d"));
 
@@ -88,7 +89,6 @@ public class MainActivity extends Activity {
         logView.setTypeface(Typeface.MONOSPACE);
         logView.setPadding(40, 60, 40, 40);
 
-        // Couche transparente qui capte tous les appuis, au-dessus de la vidéo
         View touchCatcher = new View(this);
         touchCatcher.setLayoutParams(full);
         touchCatcher.setClickable(true);
@@ -102,7 +102,61 @@ public class MainActivity extends Activity {
         setContentView(root);
 
         println(">>> VideoLooper démarré");
+        setupAutostartViaRoot();   // installe le démarrage auto si root dispo
         ensurePermissionThenStart();
+    }
+
+    // === Démarrage auto via root ===
+
+    private void setupAutostartViaRoot() {
+        println("Configuration du démarrage auto...");
+        new Thread(new Runnable() {
+            @Override public void run() {
+                final boolean ok = runAsRoot(buildAutostartScript());
+                runOnUiThread(new Runnable() {
+                    @Override public void run() {
+                        if (ok) {
+                            println("\u2713 Root OK - démarrage auto installé");
+                            println("  (redémarre le cadre pour tester)");
+                        } else {
+                            println("\u2717 Root refusé ou indisponible");
+                        }
+                    }
+                });
+            }
+        }).start();
+    }
+
+    /** Script déposé dans tous les dossiers de boot courants. */
+    private String buildAutostartScript() {
+        return
+            "mount -o remount,rw /system 2>/dev/null\n" +
+            "for D in /system/etc/init.d /system/su.d /data/adb/service.d /data/adb/post-fs-data.d; do\n" +
+            "  mkdir -p \"$D\" 2>/dev/null\n" +
+            "  echo '#!/system/bin/sh' > \"$D/99videolooper.sh\" 2>/dev/null\n" +
+            "  echo '(sleep 25; am start -n com.videolooper/com.videolooper.MainActivity) &' >> \"$D/99videolooper.sh\" 2>/dev/null\n" +
+            "  chmod 0755 \"$D/99videolooper.sh\" 2>/dev/null\n" +
+            "done\n" +
+            "mount -o remount,ro /system 2>/dev/null\n";
+    }
+
+    private boolean runAsRoot(String script) {
+        Process p = null;
+        try {
+            p = Runtime.getRuntime().exec("su");
+            DataOutputStream os = new DataOutputStream(p.getOutputStream());
+            os.writeBytes(script);
+            os.writeBytes("\nexit\n");
+            os.flush();
+            int code = p.waitFor();
+            return code == 0;
+        } catch (Exception e) {
+            return false;
+        } finally {
+            if (p != null) {
+                try { p.destroy(); } catch (Exception ignored) { }
+            }
+        }
     }
 
     // === Gestion des appuis ===
@@ -114,14 +168,9 @@ public class MainActivity extends Activity {
     }
 
     private void handleTaps(int n) {
-        if (n >= 5) {
-            quitApp();
-        } else if (n == 2) {
-            toggleMute();
-        } else if (n == 1) {
-            togglePlayPause();
-        }
-        // 3 ou 4 appuis : aucune action
+        if (n >= 5)      quitApp();
+        else if (n == 2) toggleMute();
+        else if (n == 1) togglePlayPause();
     }
 
     private void togglePlayPause() {
@@ -154,7 +203,6 @@ public class MainActivity extends Activity {
         finishAndRemoveTask();
     }
 
-    /** Remonte le volume STREAM_MUSIC à ~70% s'il est à zéro. */
     private void ensureMediaVolume() {
         try {
             AudioManager am = (AudioManager) getSystemService(Context.AUDIO_SERVICE);
@@ -168,7 +216,7 @@ public class MainActivity extends Activity {
     // === Permissions ===
 
     private void ensurePermissionThenStart() {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {           // Android 11+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
             if (Environment.isExternalStorageManager()) {
                 startPlayback();
             } else {
@@ -181,7 +229,7 @@ public class MainActivity extends Activity {
                     startActivity(new Intent(Settings.ACTION_MANAGE_ALL_FILES_ACCESS_PERMISSION));
                 }
             }
-        } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {    // Android 6..10
+        } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
             if (checkSelfPermission(Manifest.permission.READ_EXTERNAL_STORAGE)
                     == PackageManager.PERMISSION_GRANTED) {
                 startPlayback();
@@ -211,9 +259,9 @@ public class MainActivity extends Activity {
         videoView.setOnPreparedListener(new MediaPlayer.OnPreparedListener() {
             @Override
             public void onPrepared(MediaPlayer mp) {
-                player = mp;              // pour piloter le volume (mute)
-                mp.setLooping(true);      // boucle native, sans coupure
-                applyVolume();            // applique l'état mute courant
+                player = mp;
+                mp.setLooping(true);
+                applyVolume();
                 retryCount = 0;
                 videoView.start();
                 handler.postDelayed(new Runnable() {

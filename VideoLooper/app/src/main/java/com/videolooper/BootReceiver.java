@@ -1,4 +1,4 @@
-package com.example.videolooper;
+package com.videolooper;
 
 import android.content.BroadcastReceiver;
 import android.content.Context;

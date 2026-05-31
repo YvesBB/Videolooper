@@ -6,10 +6,8 @@
     <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" />
     <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
-    <!-- Pour recevoir les changements de connexion réseau -->
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
 
-    <!-- Sans effet sur Android 6, utile seulement sur Android 11+/13+ -->
     <uses-permission android:name="android.permission.MANAGE_EXTERNAL_STORAGE" />
     <uses-permission android:name="android.permission.READ_MEDIA_VIDEO" />
 
@@ -20,20 +18,30 @@
         android:theme="@android:style/Theme.Black.NoTitleBar.Fullscreen">
 
         <!-- launchMode=singleTask : une relance ramène l'app au premier plan
-             SANS recréer l'activité, donc la vidéo ne repart pas de zéro. -->
+             sans recréer l'activité (la vidéo ne repart pas de zéro). -->
         <activity
             android:name=".MainActivity"
             android:exported="true"
             android:launchMode="singleTask"
             android:screenOrientation="landscape"
             android:configChanges="orientation|screenSize|keyboardHidden|screenLayout">
+
+            <!-- Lancement normal depuis la liste d'applis -->
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
+
+            <!-- ÉCRAN D'ACCUEIL : indispensable pour que l'app puisse être
+                 lancée au démarrage à la place de byJoywe. -->
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.HOME" />
+                <category android:name="android.intent.category.DEFAULT" />
+            </intent-filter>
         </activity>
 
-        <!-- Relance l'app sur plusieurs événements (boot, wifi, déverrouillage) -->
+        <!-- Receiver de boot conservé en secours (sans effet si bloqué) -->
         <receiver
             android:name=".BootReceiver"
             android:enabled="true"

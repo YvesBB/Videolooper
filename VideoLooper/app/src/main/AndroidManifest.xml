@@ -5,7 +5,7 @@
   dans build.gradle. Garde les deux cohérents avec le package de MainActivity.
 -->
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
-    package="com.example.videolooper">
+    package="com.videolooper">
 
     <!-- Android 6..10 -->
     <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" />

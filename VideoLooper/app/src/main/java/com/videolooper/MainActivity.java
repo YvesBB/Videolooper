@@ -33,10 +33,6 @@ import java.io.File;
  *   1 appui        -> pause / reprise
  *   2 appuis brefs -> coupe / remet le son
  *   5 appuis       -> arrête le programme
- *
- * On distingue le nombre d'appuis avec une fenêtre de TAP_WINDOW ms : tant
- * que les appuis s'enchaînent dans cette fenêtre, ils sont comptés ensemble,
- * puis l'action correspondante est déclenchée.
  */
 public class MainActivity extends Activity {
 

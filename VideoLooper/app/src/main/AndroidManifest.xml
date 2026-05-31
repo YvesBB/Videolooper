@@ -1,22 +1,22 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
-  Note AGP 8+ : si tu utilises un build.gradle récent, l'attribut "package"
-  ci-dessous est ignoré au profit de "namespace 'com.example.videolooper'"
-  dans build.gradle. Garde les deux cohérents avec le package de MainActivity.
+  Note AGP 8+ : si ton build.gradle récent utilise "namespace 'com.videolooper'",
+  l'attribut "package" ci-dessous est ignoré. Garde les deux identiques.
 -->
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     package="com.videolooper">
 
-    <!-- Android 6..10 -->
+    <!-- Android 6 : seule permission utile ici (demandée à l'exécution) -->
     <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" />
-    <!-- Android 11+ : accès direct à un fichier hors dossiers média (racine du stockage) -->
-    <uses-permission android:name="android.permission.MANAGE_EXTERNAL_STORAGE" />
-    <!-- Android 13+ : accès média vidéo granulaire (utile si le fichier est indexé) -->
-    <uses-permission android:name="android.permission.READ_MEDIA_VIDEO" />
-    <!-- Permet d'ajuster le volume média au démarrage -->
+    <!-- Ajuste le volume média au démarrage -->
     <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />
-    <!-- Démarrage automatique au boot de l'appareil -->
+    <!-- Démarrage automatique au boot -->
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+
+    <!-- Permissions inutiles sur Android 6, mais sans effet négatif si tu
+         installes un jour sur un appareil plus récent (Android 11+ / 13+) -->
+    <uses-permission android:name="android.permission.MANAGE_EXTERNAL_STORAGE" />
+    <uses-permission android:name="android.permission.READ_MEDIA_VIDEO" />
 
     <application
         android:label="VideoLooper"
@@ -34,20 +34,18 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
 
-            <!-- OPTION LANCEUR (méthode la plus fiable pour un kiosque) :
-                 décommente ce bloc pour pouvoir définir l'app comme écran
-                 d'accueil. Au boot, Android lance le Home -> l'app démarre
-                 seule, et se relance si elle est fermée.
-				  -->
+            <!-- OPTION LANCEUR (non nécessaire sur Android 6) :
+                 décommente seulement si tu veux que l'app devienne l'écran
+                 d'accueil. Inutile ici, le receiver suffit.
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.HOME" />
                 <category android:name="android.intent.category.DEFAULT" />
             </intent-filter>
-           
+            -->
         </activity>
 
-        <!-- Démarrage automatique au boot (méthode receiver) -->
+        <!-- Démarrage automatique au boot -->
         <receiver
             android:name=".BootReceiver"
             android:enabled="true"

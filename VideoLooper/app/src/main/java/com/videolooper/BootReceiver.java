@@ -7,14 +7,9 @@ import android.content.Intent;
 /**
  * Relance le VideoLooper au démarrage de l'appareil.
  *
- * Remarques importantes :
- *  - L'app doit avoir été lancée manuellement au moins une fois après
- *    l'installation, sinon Android ne lui envoie aucun broadcast.
- *  - Sur Android 10+ (API 29+), le lancement d'une Activity depuis
- *    l'arrière-plan peut être bloqué par le système. Si rien ne se lance
- *    au boot, privilégie la méthode "app = lanceur (Home)" (voir manifest).
- *  - Certains constructeurs (Xiaomi, Huawei, Oppo...) exigent d'activer
- *    manuellement le "démarrage automatique" de l'app dans leurs réglages.
+ * Sur Android 6.0.1, aucune restriction : le lancement au boot fonctionne
+ * directement, à condition d'avoir ouvert l'app au moins une fois après
+ * l'installation.
  */
 public class BootReceiver extends BroadcastReceiver {
 

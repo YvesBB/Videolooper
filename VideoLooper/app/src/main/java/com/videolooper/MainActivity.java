@@ -5,6 +5,7 @@ import android.app.Activity;
 import android.content.Context;
 import android.content.Intent;
 import android.content.pm.PackageManager;
+import android.content.pm.ResolveInfo;
 import android.graphics.Color;
 import android.graphics.Typeface;
 import android.media.AudioManager;
@@ -26,18 +27,20 @@ import android.widget.VideoView;
 
 import java.io.DataOutputStream;
 import java.io.File;
+import java.util.ArrayList;
+import java.util.List;
 
 /**
- * VideoLooper : lecture en boucle, plein écran, avec son et démarrage auto.
+ * VideoLooper : lecture en boucle, plein écran, avec son.
+ *
+ * Démarrage auto : l'app utilise le root pour devenir le seul "écran d'accueil"
+ * (en désactivant byJoywe et Launcher3). Comme l'accueil est lancé à coup sûr
+ * au démarrage, l'app se lance alors automatiquement. Réversible via "quitter".
  *
  * Commandes tactiles :
  *   1 appui        -> pause / reprise
  *   2 appuis brefs -> coupe / remet le son
- *   5 appuis       -> arrête le programme
- *
- * Au lancement, si le root est disponible, l'app installe elle-même un script
- * de démarrage dans les dossiers de boot du système. byJoywe ne peut alors
- * plus empêcher le lancement au boot.
+ *   5 appuis       -> restaure l'accueil d'origine + quitte
  */
 public class MainActivity extends Activity {
 
@@ -45,6 +48,7 @@ public class MainActivity extends Activity {
     private static final int    MAX_RETRY  = 5;
     private static final int    REQ_READ   = 101;
     private static final long   TAP_WINDOW = 350;
+    private static final String PREFS      = "videolooper";
 
     private VideoView videoView;
     private TextView  logView;
@@ -102,24 +106,43 @@ public class MainActivity extends Activity {
         setContentView(root);
 
         println(">>> VideoLooper démarré");
-        setupAutostartViaRoot();   // installe le démarrage auto si root dispo
+        setupHomeViaRoot();        // devient l'écran d'accueil via root
         ensurePermissionThenStart();
     }
 
-    // === Démarrage auto via root ===
+    // === Définir VideoLooper comme écran d'accueil (via root) ===
 
-    private void setupAutostartViaRoot() {
-        println("Configuration du démarrage auto...");
+    private void setupHomeViaRoot() {
+        println("Configuration de l'écran d'accueil...");
         new Thread(new Runnable() {
             @Override public void run() {
-                final boolean ok = runAsRoot(buildAutostartScript());
+                final List<String> others = otherHomePackages();
+                boolean ok;
+                if (others.isEmpty()) {
+                    ok = true; // déjà seul écran d'accueil
+                } else {
+                    StringBuilder script = new StringBuilder();
+                    StringBuilder csv = new StringBuilder();
+                    for (String pkg : others) {
+                        script.append("pm disable-user --user 0 ").append(pkg).append("\n");
+                        csv.append(pkg).append(",");
+                    }
+                    ok = runAsRoot(script.toString());
+                    if (ok) {
+                        getSharedPreferences(PREFS, MODE_PRIVATE).edit()
+                                .putString("disabledHomes", csv.toString()).apply();
+                    }
+                }
+                final boolean fok = ok;
+                final int n = others.size();
                 runOnUiThread(new Runnable() {
                     @Override public void run() {
-                        if (ok) {
-                            println("\u2713 Root OK - démarrage auto installé");
-                            println("  (redémarre le cadre pour tester)");
+                        if (fok) {
+                            println("\u2713 VideoLooper défini comme écran d'accueil");
+                            if (n > 0) println("  (" + n + " accueil(s) désactivé(s))");
+                            println("  redémarre le cadre pour vérifier");
                         } else {
-                            println("\u2717 Root refusé ou indisponible");
+                            println("\u2717 Root refusé - accueil non modifié");
                         }
                     }
                 });
@@ -127,17 +150,39 @@ public class MainActivity extends Activity {
         }).start();
     }
 
-    /** Script déposé dans tous les dossiers de boot courants. */
-    private String buildAutostartScript() {
-        return
-            "mount -o remount,rw /system 2>/dev/null\n" +
-            "for D in /system/etc/init.d /system/su.d /data/adb/service.d /data/adb/post-fs-data.d; do\n" +
-            "  mkdir -p \"$D\" 2>/dev/null\n" +
-            "  echo '#!/system/bin/sh' > \"$D/99videolooper.sh\" 2>/dev/null\n" +
-            "  echo '(sleep 25; am start -n com.videolooper/com.videolooper.MainActivity) &' >> \"$D/99videolooper.sh\" 2>/dev/null\n" +
-            "  chmod 0755 \"$D/99videolooper.sh\" 2>/dev/null\n" +
-            "done\n" +
-            "mount -o remount,ro /system 2>/dev/null\n";
+    /** Liste des paquets "écran d'accueil" autres que nous-mêmes. */
+    private List<String> otherHomePackages() {
+        List<String> res = new ArrayList<>();
+        try {
+            Intent home = new Intent(Intent.ACTION_MAIN);
+            home.addCategory(Intent.CATEGORY_HOME);
+            List<ResolveInfo> list = getPackageManager().queryIntentActivities(home, 0);
+            for (ResolveInfo ri : list) {
+                String pkg = ri.activityInfo.packageName;
+                if (pkg != null && !pkg.equals(getPackageName()) && !res.contains(pkg)) {
+                    res.add(pkg);
+                }
+            }
+        } catch (Exception ignored) { }
+        return res;
+    }
+
+    /** Réactive les écrans d'accueil qu'on avait désactivés. */
+    private void restoreHomes() {
+        try {
+            String csv = getSharedPreferences(PREFS, MODE_PRIVATE)
+                    .getString("disabledHomes", "");
+            if (csv.isEmpty()) return;
+            StringBuilder script = new StringBuilder();
+            for (String pkg : csv.split(",")) {
+                if (!pkg.trim().isEmpty()) {
+                    script.append("pm enable ").append(pkg.trim()).append("\n");
+                }
+            }
+            if (script.length() > 0) runAsRoot(script.toString());
+            getSharedPreferences(PREFS, MODE_PRIVATE).edit()
+                    .remove("disabledHomes").apply();
+        } catch (Exception ignored) { }
     }
 
     private boolean runAsRoot(String script) {
@@ -197,10 +242,19 @@ public class MainActivity extends Activity {
     }
 
     private void quitApp() {
-        println("Arrêt du programme...");
-        handler.removeCallbacksAndMessages(null);
-        if (videoView != null) videoView.stopPlayback();
-        finishAndRemoveTask();
+        println("Restauration de l'accueil d'origine...");
+        new Thread(new Runnable() {
+            @Override public void run() {
+                restoreHomes();
+                runOnUiThread(new Runnable() {
+                    @Override public void run() {
+                        handler.removeCallbacksAndMessages(null);
+                        if (videoView != null) videoView.stopPlayback();
+                        finishAndRemoveTask();
+                    }
+                });
+            }
+        }).start();
     }
 
     private void ensureMediaVolume() {

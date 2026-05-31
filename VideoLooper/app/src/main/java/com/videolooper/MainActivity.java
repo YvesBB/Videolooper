@@ -105,7 +105,7 @@ public class MainActivity extends Activity {
         root.addView(touchCatcher);
         setContentView(root);
 
-        println(">>> VideoLooper démarré");
+        println(" VideoLooper démarré");
         setupHomeViaRoot();        // devient l'écran d'accueil via root
         ensurePermissionThenStart();
     }
@@ -213,7 +213,7 @@ public class MainActivity extends Activity {
     }
 
     private void handleTaps(int n) {
-        if (n >= 5)      quitApp();
+        if (n >= 12)      quitApp();
         else if (n == 2) toggleMute();
         else if (n == 1) togglePlayPause();
     }
